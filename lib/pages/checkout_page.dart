@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:panda/models/cart_item_model.dart';
 import 'package:panda/models/delivery_address.dart';
-import 'package:panda/models/product_model.dart';
+import 'package:panda/providers/carrito_provider.dart';
+import 'package:panda/widgets/delivery_address_modal.dart';
+import 'package:provider/provider.dart';
 
 class CheckoutPage extends StatefulWidget {
-  final ProductModel product;
-  final int quantity;
-  final DeliveryAddress address;
+  final List<CartItemModel> cartItems;
 
   const CheckoutPage({
     Key? key,
-    required this.product,
-    required this.quantity,
-    required this.address,
+    required this.cartItems,
   }) : super(key: key);
 
   @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
+  _CheckoutPageState createState() => _CheckoutPageState();
 }
 
 class _CheckoutPageState extends State<CheckoutPage> {
   String? selectedPaymentMethod;
+  DeliveryAddress? selectedAddress;
+
+  void _updateSelectedAddress(DeliveryAddress address) {
+    setState(() {
+      selectedAddress = address;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +43,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       bottomNavigationBar: _buildBottomBar(),
     );
   }
-    Widget _buildPriceRow(String label, double amount, {bool isTotal = false}) {
+
+  Widget _buildPriceRow(String label, double amount, {bool isTotal = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -61,9 +68,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildOrderSummary() {
-    final subtotal = widget.product.price * widget.quantity;
-    final delivery = 5.0;
-    final total = subtotal + delivery;
+    double subtotal = 0;
+    double delivery = 5.0;
+
+    for (var item in widget.cartItems) {
+      subtotal += item.product.price * item.quantity;
+    }
+
+    double total = subtotal + delivery;
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -77,38 +89,52 @@ class _CheckoutPageState extends State<CheckoutPage> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    widget.product.images[0],
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: widget.cartItems.length,
+              itemBuilder: (context, index) {
+                final item = widget.cartItems[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.product.name,
-                        style: Theme.of(context).textTheme.titleMedium,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          item.product.images[0],
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                      Text('Cantidad: ${widget.quantity}'),
-                      Text(
-                        '\S/ ${widget.product.price.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Theme.of(context).primaryColor,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.product.name,
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
+                            Text('Cantidad: ${item.quantity}'),
+                            Text(
+                              '\S/ ${item.product.price.toStringAsFixed(2)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                );
+              },
             ),
             const Divider(height: 32),
             _buildPriceRow('Subtotal', subtotal),
@@ -135,9 +161,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            Text(widget.address.name),
-            Text(widget.address.address),
-            if (widget.address.reference.isNotEmpty) Text(widget.address.reference),
+            if (selectedAddress != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(selectedAddress!.name),
+                  Text(selectedAddress!.address),
+                  if (selectedAddress!.reference.isNotEmpty)
+                    Text(selectedAddress!.reference),
+                ],
+              )
+            else
+              ElevatedButton(
+                onPressed: _showAddressModal,
+                child: const Text('Seleccionar dirección'),
+              ),
           ],
         ),
       ),
@@ -192,20 +230,64 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ],
         ),
         child: ElevatedButton(
-          onPressed: selectedPaymentMethod != null ? _confirmOrder : null,
+          onPressed: selectedPaymentMethod != null && selectedAddress != null
+              ? _confirmOrder
+              : null,
           child: const Text('Confirmar pedido'),
         ),
       ),
     );
   }
 
+  void _showAddressModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DeliveryAddressModal(
+        onAddressSelected: (address) {
+          _updateSelectedAddress(address);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
   void _confirmOrder() {
-    // Aquí irá la lógica para procesar el pedido
+    final carritoProvider =
+        Provider.of<CarritoProvider>(context, listen: false);
+    final selectedItems =
+        widget.cartItems; // Los items que fueron seleccionados para pago
+
+    // Eliminar solo los productos pagados
+    carritoProvider.removeSelectedItems(selectedItems);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Pedido confirmado'),
-        content: const Text('Tu pedido ha sido procesado exitosamente'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.check_circle,
+              color: Colors.green,
+              size: 50,
+            ),
+            const SizedBox(height: 16),
+            const Text('Tu pedido ha sido procesado exitosamente'),
+            const SizedBox(height: 8),
+            Text(
+              '${selectedItems.length} ${selectedItems.length == 1 ? 'producto' : 'productos'} comprados',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         actions: [
           TextButton(
             onPressed: () {

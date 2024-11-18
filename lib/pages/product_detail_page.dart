@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:panda/models/cart_item_model.dart';
 import 'package:panda/models/delivery_address.dart';
 import 'package:panda/models/product_model.dart';
 import 'package:panda/pages/checkout_page.dart';
-import 'package:panda/widgets/delivery_address_modal.dart';
+import 'package:panda/providers/carrito_provider.dart';
+import 'package:panda/widgets/add_to_cart_modal.dart';
+import 'package:provider/provider.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final ProductModel product;
@@ -33,7 +36,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 _buildImageGallery(),
                 _buildProductInfo(),
                 _buildQuantitySelector(),
-                _buildDeliverySection(),
                 _buildTotalSection(),
               ],
             ),
@@ -66,20 +68,21 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       ],
     );
   }
+
   Widget _buildImageGallery() {
-  return SizedBox(
-    height: 300,
-    child: PageView.builder(
-      itemCount: widget.product.images.length,
-      itemBuilder: (context, index) {
-        return Image.network(
-          widget.product.images[index],
-          fit: BoxFit.cover,
-        );
-      },
-    ),
-  );
-}
+    return SizedBox(
+      height: 300,
+      child: PageView.builder(
+        itemCount: widget.product.images.length,
+        itemBuilder: (context, index) {
+          return Image.network(
+            widget.product.images[index],
+            fit: BoxFit.cover,
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildProductInfo() {
     return Padding(
@@ -142,46 +145,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
   }
 
-  Widget _buildDeliverySection() {
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          ListTile(
-            title: const Text('Dirección de entrega'),
-            trailing: TextButton(
-              onPressed: _showAddressModal,
-              child: const Text('Cambiar'),
-            ),
-          ),
-          if (selectedAddress != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(selectedAddress!.name),
-                  const SizedBox(height: 4),
-                  Text(selectedAddress!.address),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tiempo estimado de entrega: 30-45 min',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).primaryColor,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTotalSection() {
     final subtotal = widget.product.price * quantity;
-    final delivery = 5.0; // Ejemplo de costo de delivery
-    final total = subtotal + delivery;
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -191,9 +156,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           children: [
             _buildPriceRow('Subtotal', subtotal),
             const SizedBox(height: 8),
-            _buildPriceRow('Delivery', delivery),
-            const Divider(),
-            _buildPriceRow('Total', total, isTotal: true),
           ],
         ),
       ),
@@ -236,35 +198,69 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
           ],
         ),
-        child: ElevatedButton(
-          onPressed: selectedAddress != null ? _proceedToCheckout : null,
-          child: const Text('Proceder al pago'),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _addToCart,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                ),
+                child: const Text('Agregar al Carrito'),
+              ),
+            ),
+            const SizedBox(width: 16.0),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _proceedToCheckout,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                ),
+                child: const Text('Proceder al pago'),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  void _showAddressModal() {
+  void _addToCart() {
+    final carritoProvider = Provider.of<CarritoProvider>(context, listen: false);
+    final cartItem = CartItemModel(
+      product: widget.product,
+      quantity: quantity,
+    );
+    carritoProvider.addToCart(cartItem);
+    
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      builder: (context) => DeliveryAddressModal(
-        onAddressSelected: (address) {
-          setState(() => selectedAddress = address);
-          Navigator.pop(context);
-        },
-      ),
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AddToCartModal(),
     );
   }
-
+  
   void _proceedToCheckout() {
+    final carritoProvider =
+        Provider.of<CarritoProvider>(context, listen: false);
+
+    final cartItem = CartItemModel(
+      product: widget.product,
+      quantity: quantity,
+    );
+
+    carritoProvider.addToCart(cartItem);
+
+    final selectedItems = [cartItem];
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CheckoutPage(
-          product: widget.product,
-          quantity: quantity,
-          address: selectedAddress!,
+          cartItems: selectedItems,
         ),
       ),
     );
